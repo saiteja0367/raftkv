@@ -1,0 +1,6 @@
+build/
+build-*/
+.cluster/
+.bench/
+.failover-test/
+*.log
