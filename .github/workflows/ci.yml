@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build: [release, sanitize]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          if [ "${{ matrix.build }}" = "sanitize" ]; then
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DRAFTKV_SANITIZE=ON
+          else
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          fi
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Unit, scenario, chaos, and linearizability tests
+        env:
+          RAFTKV_CHAOS_SEEDS: ${{ matrix.build == 'sanitize' && '20' || '200' }}
+          RAFTKV_LIN_SEEDS: ${{ matrix.build == 'sanitize' && '10' || '100' }}
+        run: ./build/raftkv-tests
+
+      - name: End-to-end failover (Raft, 1 shard)
+        if: matrix.build == 'release'
+        run: PROTOCOL=raft ./scripts/failover_test.sh
+
+      - name: End-to-end failover (Multi-Paxos, 1 shard)
+        if: matrix.build == 'release'
+        run: PROTOCOL=paxos ./scripts/failover_test.sh
+
+      - name: End-to-end failover (Raft, 8 shards, snapshots)
+        if: matrix.build == 'release'
+        run: PROTOCOL=raft SHARDS=8 SNAPSHOT_EVERY=40 ./scripts/failover_test.sh
+
+      - name: End-to-end failover (Multi-Paxos, 8 shards, snapshots)
+        if: matrix.build == 'release'
+        run: PROTOCOL=paxos SHARDS=8 SNAPSHOT_EVERY=40 ./scripts/failover_test.sh
